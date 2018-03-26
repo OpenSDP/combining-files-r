@@ -1,0 +1,967 @@
+---
+title: 'Combining Files in R: Building an Analysis File'
+author: "SDP"
+date: "March 22, 2018"
+output: html_document
+---
+
+## Intro
+
+Data is often stored in different silos within an education agency. For example, 
+to examine human capital patterns within your agency you will likely have to 
+collect, clean and combine many types of data. Teacher hiring and experience 
+data might be kept by the human resources department, credentialing information 
+might be stored with a professional standards board, and teacher class 
+assignments might be stored in the student information system, or (in the form 
+of validated rosters) within the teacher evaluation system along with teacher 
+observation and growth scores. Similarly, if you are interested in analyzing 
+student college-going success, you'll need to collect and combine student 
+assessment data, graduation and college attendance data, student background 
+characteristics, and enrollment and course taking records. If you want to 
+evaluate the impact of an intervention on student test scores or behavior, 
+you'll need to combine records about the intervention in question with data on 
+test scores, attendance, discipline, school and class enrollment, and student 
+background characteristics. Even if the different types of data you need are 
+stored by your district, state, or charter management organization in a 
+longitudinal data warehouse, you'll still need to extract the data from the 
+warehouse, typically in separate tables, clean the data into a format that is 
+optimized for your analysis software, and combine the tables into a single file 
+for analysis.
+
+Successfully building an analysis file is a milestone in a statistical computing 
+project. It means that you have assembled all of the information you need, you 
+have identified and documented problems with data coverage or quality and 
+considered their potential impact on your work, you have developed a "mental 
+map" of the data through data exploration, and you have figured out how to 
+define the specific variables you will need for your analysis. The data, and 
+you, are ready to begin analysis. 
+
+Here are the typical data preparation steps which culminate in a completed 
+analysis file:
+
+1.	Develop and refine your analytic questions and specify the data you will 
+need to answer them.
+
+2.	Research data sources and make arrangements to interview the data owners 
+for each type of data that you will need. 
+
+3.	During the interviews, ask questions about how the data are stored, how 
+frequently they are updated, the data owners' impressions of the quality of 
+the data and any concerns they have, recent or planned changes to collection 
+processes or the software used to store the data, and what IDs or other 
+information can be used to link disparate types of data. 
+
+4.	Prepare the query to extract the data you need, either by yourself (if you 
+have the necessary data access and skill) or in consultation with the data 
+owners.
+
+5.	After you receive the data, check each raw data file to make sure that the 
+variables you need are present, that the counts (of students, teachers, schools, 
+etc.) for each school year or other time period are what you expect, and that 
+the files can be linked using common IDs or other information. If not, make 
+arrangements to re-pull the data.
+
+6.	Write code to clean each raw data file, exploring the data, optimizing the 
+format and coding of the variables for your software, simplifying the structure 
+of the files, making the data internally consistent, and documenting your edits 
+and changes. 
+
+7.	Write code to combine the cleaned files into an analysis file and define the 
+additional variables you will need for your analysis.
+
+If you follow these steps and clean and combine your data carefully, you may 
+find that you will be able to use your analysis file to answer a multitude of 
+policy-relevant questions, much more quickly than if you had to start from 
+scratch with each new question. In addition, you will be able to edit and 
+re-use your data cleaning code when you receive new or updated data.
+
+In this tutorial, you will learn R commands for the final step above, 
+combining cleaned data files. The data used in this tutorial is simpler than 
+the data you are likely to use in a real analysis project--there are fewer 
+variables in each file, and fewer files which need to be combined--but the 
+process is akin to one you might use in the real world. This tutorial assumes 
+that you have a limited knowledge of R. If you don’t know any R at all, 
+you may find it helpful to complete the OpenSDP Data Exploration Tutorial before 
+starting this one. 
+
+To start this tutorial, open this `.Rmd` file in RStudio. As you read through 
+the tutorial, execute the embedded R code by clicking the green arrow, 
+using Cmd/Ctrl + C, or copying and pasting it into the console. 
+
+Your goal is to merge student, test score, and school data files and save them 
+in a combined analysis file. In Part 1, you will briefly inspect the three 
+cleaned data files (in the real world, you would already be very familiar with 
+the data and could skip this step). In Part 2, you will combine the student and 
+test score files, and in Part 3, you will add information about schools. 
+Finally, in Part 4 you will define several additional variables and then save 
+the analysis file. 
+
+For each part of the tutorials you will find some questions in **bold**. The 
+answers to these questions are located in the Answer Key.
+
+## Part 1. Inspect Files
+
+First, verify that R’s working directory is set to the directory containing 
+the tutorial file (it will be if you opened this tutorial by double-clicking on 
+`combining_files.Rmd`). If you see a listing for `combining_files.Rmd` and a data 
+subdirectory when you use the `list.files()` function, the working directory is 
+correct. We also load the `dplyr` library, which provides us with efficient and 
+easy to use commands to wrangle data in R.
+
+```{r}
+library(dplyr)
+list.files()
+```
+
+Next, load the student file. Any changes you make to data are temporary—they 
+are stored in the copy of the data in memory, not on your hard drive--unless 
+you explicitly save the file. 
+
+```{r}
+load("data/student.rda")
+str(student)
+```
+
+Based on the list of variables, it looks like student id and school year are 
+probably the key variables--that is, those two variables uniquely identify the 
+records, so that there is only one record per student per school year. Check 
+this using the logical test below, which takes advantage of the `n_distinct()` 
+function in the `dplyr` package. You don't need to type `dplyr::n_distinct` each 
+time, you can just use the shortcut `n_distinct`, but I use the full path here 
+to illustrate which functions require `dplyr` and which functions do not.
+
+```{r}
+dplyr::n_distinct(student$sid, student$school_year) == nrow(student)
+```
+
+Another way to check data structure is to use the `duplicated()` function. 
+This function creates a logical test that returns TRUE for every duplicated 
+row in a dataset. We pass this to `table()` to get a summary of how many rows 
+are duplicated. 
+
+```{r}
+duplicated(student[, c("sid", "school_year")]) %>% table
+```
+
+Use the `str()` function to review all the variables. We'll stipulate that 
+this is a cleaned data file that is ready for merging. The output seems to support 
+this -- all the categorical variables are numerically encoded, 
+and those with more than two categories have informative value labels. The 
+binary yes/no variables are encoded as zero and one. We can assume that 0 
+indicates no, or false, and 1 indicates yes, or true. Note that the data covers 
+five school years, including 178,652 students and 254 school codes.
+
+```{r}
+str(student)
+dplyr::n_distinct(student$sid)
+dplyr::n_distinct(student$school_code)
+dplyr::n_distinct(student$school_year)
+```
+
+```{r}
+table(grade = student$s_grade_level, 
+      sy = student$school_year, useNA = "always")
+```
+
+
+One anomaly is that there are no 12th graders in the first year of the data. 
+The consistency of the counts from 2014 onward suggests that the data is good 
+for years after 2013, but probably not for 2013.
+
+### Test Score File
+
+Next, load the assessment file and check on its structure and contents. 
+
+```{r}
+load("data/assess.rda")
+dplyr::n_distinct(assess$sid, assess$school_year) == nrow(assess)
+str(assess)
+```
+
+**Q1: how do the number of years of data coverage for the test score file compare to the number of years of data coverage for the student file?**
+
+How many unique students are there in the test score file? You can check this 
+by using the `dplyr::n_distinct()` function. Alternatively, you can use the 
+base R code `length(unique(assess$sid))` instead.
+
+```{r}
+dplyr::n_distinct(assess$sid)
+length(unique(assess$sid))
+```
+
+How does the number of students per year in the test score file compare with 
+the number of students per year in the student file? You can check this by 
+using the `table()` function . 
+Then, scroll up in the results window to compare against the yearly totals of 
+students by grade in the student file.
+
+```{r}
+table(sy = assess$school_year, useNA = "always")
+```
+
+**Q2: How many students are in the test score file in 2017? What about the student file?**
+
+More students were enrolled than took tests, which is not surprising. But 
+there are substantial changes across years in the number of records in the test 
+file. Check to see how many students in each grade took tests in each year.
+
+```{r}
+table(grade = assess$grade_level, sy = assess$school_year, useNA = "always")
+```
+
+**Q3: Can you explain why the number of records in the test file is different in different years?**
+
+
+### School File
+
+Finally, let's examine the data in the school file. First, load the data.
+
+```{r}
+load("data/school.rda")
+```
+
+Then, verify the structure. Use the `n_distinct()` function again. 
+There is only one record per school, rather than a separate record for each 
+school in each year. 
+
+```{r}
+dplyr::n_distinct(school$school_code) == nrow(school)
+```
+
+Examine the variables with the `str()` function:
+
+```{r}
+str(school)
+```
+
+**Q4: How many schools are in the data?**
+
+
+What is the distribution of school types in the file?
+
+```{r}
+table(school$sch_type, useNA = "always")
+```
+
+
+## Part 2: Combining Student Data and Test Scores
+
+Now that you've briefly inspected the cleaned student, test, and school data 
+files, you're ready to combine them into an analysis file using R’s join 
+functions. When you start combining cleaned data files to build an analysis file, 
+ask yourself the following questions:
+
+- Which file should I start with?
+- What if the files don't match perfectly? Which records should be included in 
+the final analysis file?
+- Which years of data should be included in the final analysis file?
+
+Keep these questions in mind as you work through the rest of the tutorial. 
+
+For this tutorial we will start by merging the student assesment file onto the 
+student file. 
+
+There are multiple ways to merge files together in R, but it is often easiest 
+to use the `*_join` functions in the `dplyr` package, which closely mimic the 
+equivalent join statements in SQL. Since we already know the merge keys we 
+want to use in each dataset have the same name, we can use an abbreviated 
+syntax to list them in the `by` argument to the function. 
+
+Since we do not know how well our two files overlap, we will start with a 
+`full_join()` that returns all rows and columns from both datasets, and 
+fills in `NA` values where there is no match. This is the most conservative 
+option and one you should consider anytime you merge two files for the 
+first time. 
+
+Next, we will inspect the pattern of matching to determine the overlap 
+between the files. 
+
+Let's create a new object `joined_data` with the `full_join()` function. 
+When we are done, we can remove the two pieces we are joining together 
+from memory, since both are fully contained in the `joined_data` object, using 
+the `rm()` function. 
+
+```{r}
+joined_data <- dplyr::full_join(student, assess, 
+                                by = c("sid", "school_year"))
+rm(assess, student)
+```
+
+We now have a joined dataset in memory, `joined_data`. We can inspect the 
+pattern of missing data by column to understand which observations matched 
+between the two datasets. To make this easier, let's create a merge variable,
+similar to what we would find in Stata, to allow us to categorize rows 
+in the joined dataset as being matched, from the `student` dataset, 
+or from the `assessment` dataset. To do this, we take advantage of 
+the fact that there were no missing elements in the `s_grade_level` in the 
+student dataset and the `grade_level` variable in the assessment dataset 
+prior to the merge. Records that do not match between the datasets will 
+have one of these two variables missing. 
+
+```{r}
+joined_data$merge <- 3 #matched
+joined_data$merge <- ifelse(is.na(joined_data$s_grade_level), 2, 
+                            joined_data$merge) # present only in assessment
+joined_data$merge <- ifelse(is.na(joined_data$grade_level), 1, 
+                            joined_data$merge) # present only in student
+
+table(joined_data$merge)
+```
+
+Tabulating this variable shows us the pattern of matches. We see that 404,699 
+records were matched between the two datasets (merge == 3). We see that 217,863 
+student-year records were in the student file, but not the student file 
+(merge == 1). Finally, 132,715 records were in the student file, but not the 
+assessment file (merge == 2). 
+
+
+```{r}
+names(joined_data)
+```
+
+Look at the list of variables and you'll see variables from both files on the 
+list. The variables from the master student file appear first, followed by the 
+variables from the test score file. The matched key variables--sid and 
+school_year--appear only once, even though they were present in both files. 
+
+We also see we have two variables (`fake_data.x` and `fake_data.y`) with similar 
+names. When two variables have the same name, but are not used to join on, 
+R will create a copy of them and give them a suffix corresponding to whether 
+they belonged to the first (`x`) dataset in the join function, or the 
+second(`y`). 
+
+*What share of records matched successfully?*
+
+```{r}
+prop.table(table(joined_data$merge))
+```
+
+Let's browse the merged data to understand more about how the merge worked. 
+First, look at the records which merged successfully. For these records, test 
+scores have been successfully added to the student data. Close or minimize the 
+browser window after you inspect the data. (Note the `View()` function is only 
+available within RStudio.)
+
+```{r}
+View(joined_data[joined_data$merge == 3, ])
+```
+
+Next, take a look at the "master only" (x dataframe) records. These records have missing 
+values for all the test score variables.
+
+```{r}
+View(joined_data[joined_data$merge == 1, ])
+```
+
+Similarly, the y dataframe records have missing values for all the student 
+variables (except sid and school_year, of course).
+
+```{r}
+View(joined_data[joined_data$merge == 2, ])
+```
+
+What about the `fake_data` variable? It was present in both files, but wasn't 
+included in the key variables for merging. In this type of situation, R will 
+duplicate the variable and provide a suffix indicating whether it was from the first 
+or second table in the call to `full_join()`. So now we have `fake_data.x` and `fake_data.y` 
+We can safely combine these into a single variable, and will do that later.
+
+```{r}
+table(joined_data$fake_data.x, useNA = "always")
+table(joined_data$fake_data.y, useNA = "always")
+```
+
+Clearly, if you want to do analyses that depend on having both student 
+characteristics and test score data, you can't use any of the records that are 
+missing one or the other in your analysis sample. What does this mean for your 
+analysis file? Should you just keep the records for which `merge is 3`, and drop 
+the others? Should you keep all the records, and drop the extra records when you 
+start analysis? Do some additional merge diagnostics before you decide how to 
+proceed. First, see how the records merged for each individual school year.
+
+```{r}
+table(joined_data$school_year, joined_data$merge, useNA="always")
+```
+
+**Q5: Which school years have only test score data?**
+
+Remember that there was a problem with the student data in 2013--it was 
+missing 12th graders, and in general the counts were lower than in later years. 
+You can recreate that tabulation by looking at all the records except the 
+test-score only records.
+
+We can quickly look at this by using the *piping* syntax. Here we name our dataset 
+and we "pipe" it into a function using the `%>%` command. The next function 
+subsets the `joined_data` object according to our input, here all rows where 
+`merge` does not equal 2. We pipe that data into a function to select only the 
+columns we want to tabulate, the `select()` function, and finally we pipe that 
+output directly into the familiar `table()` command. This syntax is easy to read 
+and easy to remember, and so we will make use of it in the rest of the tutorial.
+
+Importantly, note here that we have not overwritten the original data with this 
+command, that is because there is no assignment operator `<-` here. If we wanted 
+to drop rows or columns from `joined_data` permanently, we would need to reassign 
+the new filtered data to that name. We will do this below. 
+
+```{r}
+joined_data %>% filter(merge !=2) %>% 
+  select(s_grade_level, school_year) %>% 
+  table()
+```
+
+Let's assume that after careful thought, you've decided that four years of 
+data are sufficient for your analysis, and you don't trust the 2013 student data 
+and don't want to use it without further investigation, and potentially a new 
+data pull. But, you want to use prior-year test scores in some of your analyses. 
+So, even if you plan to drop the 2013 student records, you want to keep the test 
+score records from that year so that you have prior-year test scores available 
+for students in 2014 who were also in the data in 2013. 
+
+Looking at the test score data, the counts seem consistent across years from 
+2012 forward. (Note that the `grade_level` variable is the grade variable from the 
+test score data, while the `s_grade_level` data is the variable from the student 
+data.)
+
+```{r}
+joined_data %>% filter(merge !=1) %>% 
+  select(grade_level, school_year) %>% 
+  table()
+
+```
+
+Taking another look at the merge status by year, you decide that it's safe to 
+drop the first two years of data. Later, after you've defined a prior-year test 
+score variable you will be able to drop the 2013 records as well, and keep only 
+2014-2017 in your analysis file, but you'll complete the rest of the merging 
+process before you do that.
+
+```{r}
+table(joined_data$school_year, joined_data$merge, useNA="always")
+```
+
+```{r}
+joined_data <- joined_data %>% filter(school_year > 2012)
+# By reassigning the new object to the joined_data object, we have overwritten 
+# the data in memory and permanently changed it. To get it back you can 
+# rerun all the commands up to this point in the tutorial using the options 
+# in RStudio to run all previous chunks of code. 
+```
+
+
+Now when you tabulate the `merge` variable, you are looking at the match rate 
+for two data sources which span the same set of years, so the percentages of 
+matching and non-matching records are more meaningful.
+
+```{r}
+table(joined_data$merge, useNA = "always")
+```
+
+**Q6: What share of the student-year records were present only in the test score file?**
+
+```{r}
+prop.table(table(joined_data$merge, useNA = "always"))
+```
+
+It seems logical that there are students without test score data. Is roughly a 
+third a reasonable share of records to be missing test scores? Check by grade 
+level.
+
+```{r}
+table(joined_data$grade_level, joined_data$merge)
+```
+
+
+Oops! Using the grade level variable from the test file doesn't work, since 
+it's missing in all of the records which are missing test data. Use the grade 
+level variable from the student file instead.
+
+```{r}
+table(joined_data$s_grade_level, joined_data$merge)
+```
+
+
+Look at the share of records which merge as well as the count.
+
+```{r}
+prop.table(table(joined_data$s_grade_level, joined_data$merge, 
+           useNA="always"), 1) # row proportions
+```
+
+**Q7: What share of fourth-grade student records have test score data?**
+
+For grades 3-8, about 95 percent of students have math or ELA test score data. 
+For grades 9 and 10, the shares are under 90 percent. This seems reasonable--
+most of those students without test scores were likely absent on test day, 
+enrolled in schools elsewhere, or didn't take the test for some other reason.
+
+```{r}
+joined_data %>% filter(s_grade_level <= 8 & s_grade_level >=3) %>% 
+  pull(merge) %>% table
+```
+
+
+
+```{r}
+joined_data %>% filter(s_grade_level == 9 | s_grade_level == 10) %>% 
+  pull(merge) %>% table
+
+```
+
+
+Thinking back to the questions earlier, does it make sense to keep only 
+student records with test scores, if you need test scores for your analysis? In 
+general, no. You can always restrict your analysis sample when you do the 
+analysis, but keeping all of the records, including students in untested grades 
+and students missing test scores, in your cleaned, compiled analysis file means 
+you can use the analysis file for multiple purposes. 
+
+And, even if you do decide to restrict your analysis file to just students in 
+tested grades, students without test scores who are high mobility or more likely 
+to be absent may be different in systematic ways from students with test scores, 
+so you should keep them so that your data is representative of your student 
+population. In addition, you may want to use your analysis file to track student 
+progress across years, and you don’t want to have students in the analysis file 
+in one year and missing in the next because they are missing a test score that 
+year. 
+
+It is worth checking to see if any particular group of students, or particular 
+schools, are missing test scores in tested grades. Except for a handful of small 
+schools, test score missingness doesn't seem to be concentrated in any 
+particular schools, which is reassuring. Note that it would be easier to inspect 
+this if we had school names or knew more about school types.
+
+To tabulate by school, we use the `group_by()` command to repeate commands for 
+each slice of the data sharing a school code. We use the `summarize()` function 
+to tell R what new data we want to calculate for each school group, here we 
+use the fact that `merge==2` evaluates to a TRUE/FALSE statement (1/0) and take 
+the sum of this to be the numerator, then we use the shortcut `n()` which returns 
+all the rows of data in a particular group of the dataset, here for each `school_code`. 
+The result is a proportion of records for each school code that takes each value 
+of the merge variable. 
+
+```{r}
+joined_data %>% filter(s_grade_level >=3 & s_grade_level <=8) %>% 
+  group_by(school_code) %>% select(merge) %>% 
+  summarize(merge1 = sum(merge == 1) / n(), 
+            merge2 = sum(merge == 2) / n(), 
+            merge3 = sum(merge == 3) / n()) %>% head
+
+joined_data %>% filter(s_grade_level >=3 & s_grade_level <=8) %>% 
+  group_by(school_code) %>% select(merge) %>% 
+  summarize(merge1 = sum(merge == 1) / n(), 
+            merge2 = sum(merge == 2) / n(), 
+            merge3 = sum(merge == 3) / n()) %>% View
+```
+
+So the answer to whether you should keep both records with _merge equal to 1 
+(student file only) and 3 (matched records with both student and test data)—is 
+yes, you should. What about the 3,165 records with _merge equal to 2 which have 
+only test data? If these students have test scores in the student data system, 
+how can they be missing other data? The answer is that you don’t know. The 
+student data may have come from a snapshot which happened at a different time 
+than the test score data pull, so that the source database was slightly 
+different; there may have been data collection or data entry errors; or the 
+students with missing data may have been present on test day but not in the 
+school system long enough to be included in an annual snapshot data file. You 
+can't check these records against school code, because that variable wasn't 
+present in the test data, but do check the missingness pattern against school 
+year again.
+
+```{r}
+table(joined_data$school_year, 
+                 joined_data$merge, useNA = "always")
+```
+
+You can see that almost all of the non-matches are in 2013, a year where you 
+are suspicious of the student data already. In later years, less than a tenth of 
+a percent of records have test data but no student data. Dropping these few 
+records is unlikely to change the results of any of your analyses, or bias your 
+summary statistics.
+
+In this fairly typical case where you have two files which don't match 
+perfectly, it's often best to decide which file you consider to be most 
+complete and accurate, and then use that file as your base file. In this case 
+you would plan to keep all of the records from your base file, checking and 
+hoping for high match rates as you merge other files with the base file, and 
+planning to drop non-matching records after doing some diagnostic exploration. 
+Using the student file as your base file seems justified here. 
+
+```{r}
+joined_data %>% filter(school_year > 2013) %>%
+  select(school_year, merge) %>% 
+  table %>% prop.table(., 1)
+```
+
+The result of your merge diagnostics is that you will keep all records from 
+the student file, both those with and without test data, but drop the records 
+from the test data which lack corresponding student data.
+
+```{r}
+joined_data <- joined_data %>% filter(merge != 2)
+```
+
+Combine the two `fake_data` variables into one. Since we know they both represent a 
+constant 1, we can do the replacement safely:
+
+```{r}
+joined_data$fake_data <- joined_data$fake_data.x
+joined_data$fake_data[is.na(joined_data$fake_data)] <-
+  joined_data$fake_data.y[is.na(joined_data$fake_data)]
+joined_data$fake_data.x <- NULL
+joined_data$fake_data.y <- NULL
+```
+
+There is one more matter which is likely to lead to confusion for future you 
+or other users of the analysis file: there are two grade level variables. One 
+comes from the test file, and one from the student file. Compare them with a 
+crosstab.
+
+```{r}
+table(joined_data$s_grade_level, joined_data$grade_level, useNA = "always")
+```
+
+Of the approximately 400,000 records with test scores, there are about 7000 
+cases of students with testing grade levels that don't correspond to their 
+enrollment grade levels. The test grade level is important--for example, it may 
+have been used to standardize the test scores to have a mean of zero and a 
+standard deviation of one, so that all the students taking a test were compared 
+to other students taking the same test in the same grade and year. But, it's 
+missing for all of the students missing test scores, so it's less useful than 
+the student grade level variable. For the purposes of the analysis file, it 
+probably makes sense to assign a single grade to each student, and use the grade 
+from the student enrollment file. Here you are making a decision to lose some 
+information, in favor of simplifying the analysis file. It's important to 
+document decisions like this in comments when you write a do file.
+
+```{r}
+joined_data$grade_level <- NULL
+```
+
+Before beginning to merge the school file, save the data in a new file. This 
+isn't technically necessary, but it will let you restart the tutorial from this 
+point.
+
+```{r eval=FALSE}
+save(joined_data, file = "data/student_intermediate.rda")
+# to restart load the data back in using
+# load("data/student_intermediate.rda")
+```
+
+## Part 3: Adding School Data
+
+The goal for this part of the tutorial is to add school data to the analysis 
+file. Load the school file. 
+
+```{r}
+load("data/school.rda")
+```
+
+Check the structure using the `n_distinct()` function.
+
+```{r}
+dplyr::n_distinct(school$school_code) == nrow(school)
+```
+
+This will be a one-to-many merge since the student data has multiple records 
+for a given school. Again using the `*_join()` family of functions, we can 
+do a full join and then identify which records belong to which dataset. 
+
+```{r}
+joined_data <- full_join(joined_data, school, by = c("school_code"))
+```
+
+
+```{r}
+joined_data$merge <- 3
+joined_data$merge <- ifelse(is.na(joined_data$sid), 1, 
+                            joined_data$merge) # school, not student
+joined_data$merge <- ifelse(is.na(joined_data$sch_name), 2, 
+                            joined_data$merge) # student, no school
+```
+
+
+**Q8: How many schools from the school file did not have student data in the student file?**
+
+Use the `n_distinct()` function to see how many schools there are in the 
+matched student data.
+
+```{r}
+dplyr::n_distinct(joined_data$school_code[joined_data$merge == 3])
+```
+
+The number of unmatched schools seems fairly high--43 compared with 250 
+matched schools. Could there be something wrong with the student data? Look at 
+the names of the unmatched schools.
+
+```{r}
+unique(joined_data$sch_name[joined_data$merge == 1])
+```
+
+Many of them seem to be religious schools or are listed as treatment centers. 
+Check the school types for these schools.
+
+```{r}
+table(joined_data$sch_type, joined_data$merge)
+```
+
+Almost all of the unmatched schools without students are categorized as 
+alternative, not a school, or non-public. It seems safe to drop these records.
+
+```{r}
+joined_data <- joined_data %>% filter(merge != 1)
+```
+
+There are still 10 records from the student data without school data. Browse 
+these records. Close the window when you are done.
+
+```{r}
+View(joined_data[joined_data$merge == 2, ])
+```
+
+These four "schools" have very few students, so it's unlikely that you would 
+ever include them in analyses. You have three choices: you can drop the records; 
+you can do some research to find out what entity or program the school codes 
+refer to, update the school file, and then rerun the analysis file building 
+code; or you can keep the records in the analysis file with missing school 
+information. For now, do the latter, but change the school type for the records 
+to "Alternative" so they can be easily excluded when you are defining your 
+analysis sample. 
+
+To do this, first find out the numeric code for alternative schools by 
+making a table of the school type variable. This variable is a factor so 
+the only valid values it can take are those that are observed in the vector, 
+and the output from `table()` tells us which those are. 
+
+
+```{r}
+table(joined_data$sch_type, useNA= "always")
+```
+
+Next, find the school codes for the records you want to edit. These have no 
+labels since they are from the student file, not the school file.
+
+```{r}
+joined_data$school_code[joined_data$merge == 2]
+```
+
+The `%in%` function is a special function that allows us to do multiple matching. 
+
+```{r}
+joined_data$sch_type[joined_data$school_code %in% c(1360, 1361, 1362, 1365)] <-
+  "Alternative"
+```
+
+```{r eval=FALSE}
+## Alternatively you don't have to type in the codes manually
+sch_keys <- unique(joined_data$school_code[joined_data$merge == 2])
+joined_data$sch_type[joined_data$school_code %in% sch_keys] <- "Alternative"
+```
+
+Drop the merge variable, because you no longer need it.
+
+```{r}
+joined_data$merge <- NULL
+```
+
+
+/*Review the distribution of school types.*/
+
+```{r}
+table(joined_data$sch_type)
+```
+
+You can see that there are still a handful of records that are listed as "not 
+a school" or "non-public." Based on the pattern for the other school codes in 
+these categories, these schools should not have student data. Browse to inspect 
+the records.
+
+```{r}
+joined_data %>% filter(sch_type == "Not a School" | sch_type == "Non-Public") %>% 
+  View
+```
+
+These look like data errors that weren't uncovered during data cleaning. The 
+school codes for the given students may be wrong, or the schools may be 
+miscategorized. Deciding whether to keep or drop the records depends on your 
+level of confidence about the information in the school file. School data is 
+notoriously messy, and you can always do more research to make your school 
+information better and your school file cleaner. Overall, 38 student records 
+won't be enough to bias your analytic results, though, so you can drop the 
+records for now. If you were writing your commands in an R script, you could 
+make a note to yourself in a comment to follow up and investigate.
+
+```{r}
+joined_data <- joined_data %>% 
+  filter(sch_type != "Not a School" | sch_type != "Non-Public")
+```
+
+Tidy up the variable order so it's easy to guess the structure of the data by 
+looking at the list of variables. Put the school variables at the end. Do this 
+efficiently by using the `sch_` prefix and the `matches()` function.
+
+Put the key variables (`sid` and `school_year`) at the beginning.
+
+```{r}
+joined_data <- joined_data %>% select(sid, school_year, everything(),
+                                      -matches("sch_"), matches("sch"))
+names(joined_data)
+```
+
+
+## Part 4. Defining Derived Variables
+
+Now that you've assembled and tidied up the data you need for your analysis 
+file, you can define additional variables that you may want for convenience, to 
+use as controls in statistical modeling, or for other reasons. If you are 
+writing a do file to build your analysis file, for practical reasons you should 
+keep the code for your charts, tables, models, and other analyses in a separate 
+do file. But if you define the variables you need in your analysis file building 
+do file, you can be sure that everyone who uses the analysis file will use the 
+same variable definitions across different analyses and projects. As you develop 
+new variable definitions, you can add them to the analysis file building code 
+periodically and rerun it to update the analysis file. Here we'll demonstrate 
+defining two sets of derived variables. First, we'll add the test scores from 
+the prior year to each student record; and second, we'll generate school-level 
+summaries of some student characteristics.
+
+To do this, we'll take advantage of the nice syntax in `dplyr` to group and 
+arrange our data, and have R iterate over the dataset and fill in the 
+variables for us. 
+
+Let's define a variable with the prior-year math score for each record. This 
+variable will be missing if the prior-year score doesn't exist. Here the suffix 
+in the variable name will be `tm1` stands for "T minus one", but you can use a different 
+variable naming convention if you like. 
+
+You can read the code below from left to right. We take our dataset, `joined_data` 
+and we sort it first by `sid`, then by `school_year`. Next, we `group_by()` so that 
+ever operation we do is done for each grouping variable, in this case, `sid`. 
+Then we `mutate()` - which means to add additional columns -- and we define 
+the additional variables as the prior year test score. The `lag()` function 
+does this for us, by default it provides a lag of 1 row. To be safe, it is always 
+good to specify the time variable explicitly in the lag function, here `order_by = school_year`. 
+
+We can combine multiple variables into one mutate statement, so we do both the 
+reading and math scores here. We could also use the `lead()` function if we 
+wanted to get the row following instead of proceeding. The documentation for 
+`dplyr::lag()` has further details. 
+
+```{r}
+joined_data <- joined_data %>% arrange(sid, school_year) %>% 
+  group_by(sid) %>% 
+  mutate(std_score_m_tm1 = dplyr::lag(std_score_m, order_by = school_year), 
+         std_score_e_tm1 = dplyr::lag(std_score_e, order_by = school_year)) %>% 
+  ungroup
+```
+
+Browse the data to convince yourself that the prior-year variables were 
+defined correctly, and that the test score values from the prior year were 
+copied into the current year for each student record.
+
+```{r}
+joined_data %>% select(sid, school_year, matches("std_score_")) %>% 
+  View
+```
+
+You saw that there were no lagged test score values defined for 2013, which 
+makes sense because 2013 is the earliest year in the data. Now that we've 
+defined prior-year test scores, we can drop the 2013 records as planned.
+
+```{r}
+joined_data <- joined_data %>% filter(school_year != 2013)
+```
+
+Summarize the lagged variables and compare them to the current-year versions 
+of the same variables.
+
+```{r}
+joined_data %>% select(matches("std_")) %>% 
+  summary
+```
+
+Next, define school-level averages or shares for student minority status, 
+economically disadvantaged status, and average test scores. This can be done 
+by using the same `group_by()` functionality as above and the `mutate()` statement. 
+The `mutate()` function is similar to summarize, but instead of collapsing the 
+data down, it just adds an additional column to each observation. Very handy 
+for adding school level traits to student level data. 
+
+In this case, we tell R to group the data by `school_code` and `school_year`. Then, 
+within each `school_code` and `school_year`, we define the variables we want to compute. 
+
+
+```{r}
+joined_data <- joined_data %>% group_by(school_code, school_year) %>% 
+  mutate(sch_ed_pct = mean(s_ed, na.rm=TRUE) * 100, 
+         sch_minority_pct = mean(ifelse(s_race != "White", 1, 0), na.rm=TRUE) * 100,
+            sch_score_m_avg = mean(std_score_m, na.rm=TRUE), 
+            sch_score_e_avg = mean(std_score_e, na.rm=TRUE)) %>% 
+  ungroup()
+```
+
+For the percent economically disadvantged, we can take the simple school-level mean 
+of the binary indicator of economic disadvantage. We need to remember two things, first 
+we need to use the `na.rm=TRUE` option for the `mean()` function, otherwise, if any 
+student is missing, the resulting mean will be computed as NA as well. Second, 
+if we want to express our variables as a percentage, we need to multiply by 100. 
+
+For the minority measure, we need to first create an intermediate variable that takes 1 
+if a student is non-white, and 0 when a student is white, this is the `ifelse(...)` bit. 
+Then, we take the mean of this intermediate variable. Finally, we multiply it by 100. 
+This demonstrates the ability of R to chain together many steps without needing to 
+create intermediate variables. 
+
+Computing the average test scores follows the same pattern. 
+
+Check the distribution of the new variables using data exploration functions 
+like `summary()`, `hist()`, or `table()`. Since the new variables are school-level 
+variables, you only want to include one record per school per year when you 
+examine them. You can do this by defining a variable which picks out just one 
+record per school and year and collapsing the dataset using the `distinct()` 
+function in dplyr. 
+
+```{r}
+sch_vars <- joined_data %>% 
+  select(school_code, school_year, matches("sch_")) %>%
+  distinct()
+  
+```
+
+```{r}
+View(head(sch_vars))
+```
+
+We may want to check how our data looks each year of the data. In this case it 
+can be handy to write a simple `for` loop. 
+
+```{r}
+for(i in unique(sch_vars$school_year)){
+  # Tell us what we're looking at in the loop
+  print(paste0("***** Summary for year ", i, " *******"))
+  # Print the summary of the data for that year
+  print(summary(sch_vars[sch_vars$school_year == i,]))
+}
+```
+
+Reorder your columns taking advantage of the variable prefix names you have used.
+
+```{r}
+joined_data <- joined_data %>% 
+  select(sid, school_year, school_code, matches("s_"), matches("std_"),
+         matches("sch_"), fake_data)
+```
+
+
+Now you have an analysis file which has four years of student demographic and 
+program participation data, test scores, and school characteristics. 
+Congratulations! Verify the structure one last time for luck and save the 
+file.
+
+```{r}
+dplyr::n_distinct(joined_data$sid, joined_data$school_year) == nrow(joined_data)
+```
+
+```{r eval=FALSE}
+save(joined_data, file = "data/student_analysis.rda")
+```
+
