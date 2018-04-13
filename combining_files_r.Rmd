@@ -80,7 +80,7 @@ combining cleaned data files. The data used in this tutorial is simpler than
 the data you are likely to use in a real analysis project--there are fewer 
 variables in each file, and fewer files which need to be combined--but the 
 process is akin to one you might use in the real world. This tutorial assumes 
-that you have a limited knowledge of R. If you don’t know any R at all, 
+that you have a limited knowledge of R. If you don't know any R at all, 
 you may find it helpful to complete the OpenSDP Data Exploration Tutorial before 
 starting this one. 
 
@@ -101,7 +101,7 @@ answers to these questions are located in the Answer Key.
 
 ## Part 1. Inspect Files
 
-First, verify that R’s working directory is set to the directory containing 
+First, verify that R's working directory is set to the directory containing 
 the tutorial file (it will be if you opened this tutorial by double-clicking on 
 `combining_files.Rmd`). If you see a listing for `combining_files.Rmd` and a data 
 subdirectory when you use the `list.files()` function, the working directory is 
@@ -113,7 +113,7 @@ library(dplyr)
 list.files()
 ```
 
-Next, load the student file. Any changes you make to data are temporary—they 
+Next, load the student file. Any changes you make to data are temporary--they 
 are stored in the copy of the data in memory, not on your hard drive--unless 
 you explicitly save the file. 
 
@@ -247,7 +247,7 @@ table(school$sch_type, useNA = "always")
 ## Part 2: Combining Student Data and Test Scores
 
 Now that you've briefly inspected the cleaned student, test, and school data 
-files, you're ready to combine them into an analysis file using R’s join 
+files, you're ready to combine them into an analysis file using R's join 
 functions. When you start combining cleaned data files to build an analysis file, 
 ask yourself the following questions:
 
@@ -520,12 +520,12 @@ tested grades, students without test scores who are high mobility or more likely
 to be absent may be different in systematic ways from students with test scores, 
 so you should keep them so that your data is representative of your student 
 population. In addition, you may want to use your analysis file to track student 
-progress across years, and you don’t want to have students in the analysis file 
+progress across years, and you don't want to have students in the analysis file 
 in one year and missing in the next because they are missing a test score that 
 year. 
 
 It is worth checking to see if any particular group of students, or particular 
-schools, are missing test scores in tested grades. Except for a handful of small 
+schools, are missing test scores in tested grades? Except for a handful of small 
 schools, test score missingness doesn't seem to be concentrated in any 
 particular schools, which is reassuring. Note that it would be easier to inspect 
 this if we had school names or knew more about school types.
@@ -554,10 +554,10 @@ joined_data %>% filter(s_grade_level >=3 & s_grade_level <=8) %>%
 ```
 
 So the answer to whether you should keep both records with _merge equal to 1 
-(student file only) and 3 (matched records with both student and test data)—is 
+(student file only) and 3 (matched records with both student and test data) is 
 yes, you should. What about the 3,165 records with _merge equal to 2 which have 
 only test data? If these students have test scores in the student data system, 
-how can they be missing other data? The answer is that you don’t know. The 
+how can they be missing other data? The answer is that you don't know. The 
 student data may have come from a snapshot which happened at a different time 
 than the test score data pull, so that the source database was slightly 
 different; there may have been data collection or data entry errors; or the 
@@ -899,7 +899,7 @@ joined_data <- joined_data %>% group_by(school_code, school_year) %>%
   ungroup()
 ```
 
-For the percent economically disadvantged, we can take the simple school-level mean 
+For the percent economically disadvantaged, we can take the simple school-level mean 
 of the binary indicator of economic disadvantage. We need to remember two things, first 
 we need to use the `na.rm=TRUE` option for the `mean()` function, otherwise, if any 
 student is missing, the resulting mean will be computed as NA as well. Second, 
@@ -964,4 +964,3 @@ dplyr::n_distinct(joined_data$sid, joined_data$school_year) == nrow(joined_data)
 ```{r eval=FALSE}
 save(joined_data, file = "data/student_analysis.rda")
 ```
-
